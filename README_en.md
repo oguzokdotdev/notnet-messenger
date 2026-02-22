@@ -1,5 +1,7 @@
 # NotNet
 
+🇷🇺 [Russian](README.md)
+
 NotNet is a simple LAN-based messenger designed for small groups.  
 No accounts. No cloud. No external servers.  
 Just devices talking inside the same network.
