@@ -1,7 +1,6 @@
 # Python
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
 
 # Virtual env
 .venv/
@@ -12,9 +11,11 @@ env/
 build/
 dist/
 *.spec
+!NotNet.spec
 
-# VSCode
+# IDE
 .vscode/
+.idea/
 
 # OS
 .DS_Store
