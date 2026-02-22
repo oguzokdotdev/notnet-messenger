@@ -4,6 +4,23 @@ NotNet is a simple LAN-based messenger designed for small groups.
 No accounts. No cloud. No external servers.  
 Just devices talking inside the same network.
 
+## Screenshots
+
+<p align="center">
+  <a href="assets/server-fullscreen.png">
+    <img src="assets/server-small.png" width="80%">
+  </a>
+</p>
+
+<p align="center">
+  <a href="assets/elphaba.png">
+    <img src="assets/elphaba.png" width="45%">
+  </a>
+  <a href="assets/glinda.png">
+    <img src="assets/glinda.png" width="45%">
+  </a>
+</p>
+
 ## Installation
 
 Download the archive from the latest [Release](https://github.com/oguzokdotdev/notnet-messenger/releases/latest).  
