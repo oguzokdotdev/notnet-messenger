@@ -1,10 +1,12 @@
+
 # NotNet
 
-NotNet is a simple LAN-based messenger designed for small groups.  
-No accounts. No cloud. No external servers.  
-Just devices talking inside the same network.
+🇬🇧 [English](README_en.md)
 
-## Screenshots
+NotNet — это мессенджер для общения в локальной сети без интернета.
+Без аккаунтов. Без облаков. Без внешних серверов.
+
+## Скриншоты
 
 <p align="center">
   <a href="assets/server-fullscreen.png">
@@ -21,39 +23,36 @@ Just devices talking inside the same network.
   </a>
 </p>
 
-## Installation
+## Установка
 
-Download the archive from the latest [Release](https://github.com/oguzokdotdev/notnet-messenger/releases/latest).  
-Extract it.
+Скачайте архив из последнего [релиза](https://github.com/oguzokdotdev/notnet-messenger/releases/latest) и распакуйте его.
 
-### On Linux use:
+### На Linux
 ```bash
 tar -xvzf notnet-v1.0.0-linux-amd64.tar.gz
 ```
 
-### On Windows
-Use 7-Zip, WinRAR or any file archiver.
+### На Windows
+Используйте 7-Zip, WinRAR или любой другой архиватор.
 
 ---
 
-## Usage
+## Руководство пользователя
 
-Launch NotNet and choose a mode:
+Запустите NotNet и выберите режим:
 
-- **Server** — start a local server
-- **Client** — connect using the server IP address
-
-
----
-
-## Notes
-
-- Works only inside the same local network (LAN)
-- No internet servers involved
-- All messages stay local
+- **Server** — запуск локального сервера
+- **Client** — подключение к серверу по локальному IP-адресу.
 
 ---
 
-## License
+## Примечания
+- Работает только в одной локальной сети.
+- Нет привязки к внешним серверам.
+- Сообщения не выходят за пределы локальной сети.
+
+---
+
+## Лицензия
 
 GPL-3.0
