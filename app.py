@@ -2,6 +2,8 @@ import sys, os
 import threading
 import time
 import socket
+import json
+import urllib.request
 
 from PySide6.QtCore import QObject, Signal, Qt, QTimer
 from PySide6.QtGui import QFont, QGuiApplication, QTextCursor, QFontDatabase
@@ -15,7 +17,10 @@ from PySide6.QtWidgets import (
 
 from core.server import NotNetServer
 from core.client import NotNetClient
+from core.protocol import PROTOCOL_VERSION
 
+APP_VERSION = "1.0.0-beta"
+GITHUB_LATEST_URL = "https://api.github.com/repos/oguzokdotdev/notnet-messenger/releases/latest"
 
 def _resource_path(rel_path: str) -> str:
     base = getattr(sys, "_MEIPASS", os.path.abspath("."))
@@ -33,7 +38,7 @@ class BigButton(QPushButton):
 
 
 class StartPage(QWidget):
-    def __init__(self, go_server, go_client):
+    def __init__(self, go_server, go_client, go_settings):
         super().__init__()
 
         outer = QVBoxLayout(self)
@@ -60,15 +65,18 @@ class StartPage(QWidget):
 
         btn_server = QPushButton("Server")
         btn_client = QPushButton("Client")
+        btn_settings = QPushButton("Settings")
 
-        for b in (btn_server, btn_client):
+        for b in (btn_server, btn_client, btn_settings):
             b.setMinimumHeight(54)
 
         btn_server.clicked.connect(go_server)
         btn_client.clicked.connect(go_client)
+        btn_settings.clicked.connect(go_settings)
 
         layout.addWidget(btn_server)
         layout.addWidget(btn_client)
+        layout.addWidget(btn_settings)
 
         row.addWidget(card, 0)
         row.addStretch(1)
@@ -275,15 +283,13 @@ class ServerPage(QWidget):
             return
 
         self.lbl_addr.setText(self._format_addr())
-        self._started_at_ts = time.time()
+        self._started_at_ts = None
 
         self.server_thread = threading.Thread(target=self.server.start, daemon=True)
         self.server_thread.start()
 
         self.btn_start.setEnabled(False)
-        self.btn_stop.setEnabled(True)
-        self.uptime_timer.start()
-        self._tick_uptime()
+        self.btn_stop.setEnabled(False)
 
     def _stop_server(self):
         self.server.stop()
@@ -335,6 +341,21 @@ class ServerPage(QWidget):
     def _append_log(self, text: str, kind: str = "info"):
         ts = time.strftime("%H:%M:%S", time.localtime())
         kind = kind or "info"
+
+        if "NotNet Server running on" in text:
+            if not self._started_at_ts:
+                self._started_at_ts = time.time()
+            self.btn_start.setEnabled(False)
+            self.btn_stop.setEnabled(True)
+            if not self.uptime_timer.isActive():
+                self.uptime_timer.start()
+            self._tick_uptime()
+        elif kind == "error" and "Port" in text and "already in use" in text:
+            self.btn_start.setEnabled(True)
+            self.btn_stop.setEnabled(False)
+            self.uptime_timer.stop()
+            self.lbl_uptime.setText("Uptime: 00:00:00")
+            self._started_at_ts = None
 
         if kind == "connect":
             color = "#22c55e"
@@ -855,6 +876,74 @@ class ClientPage(QWidget):
         QLineEdit:focus { border: 1px solid #60a5fa; }
         """
 
+class SettingsBridge(QObject):
+    latest = Signal(str)
+
+class SettingsPage(QWidget):
+    def __init__(self, go_back):
+        super().__init__()
+        self._go_back = go_back
+
+        self.bridge = SettingsBridge()
+        self.bridge.latest.connect(self._set_latest)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(24, 24, 24, 24)
+
+        top = QHBoxLayout()
+        back = QPushButton("← Back")
+        back.clicked.connect(self._go_back)
+        top.addWidget(back)
+        top.addStretch(1)
+        layout.addLayout(top)
+
+        title = QLabel("Settings")
+        title.setObjectName("title")
+        layout.addWidget(title)
+
+        info_title = QLabel("Information")
+        info_title.setObjectName("sectionTitle")
+        layout.addWidget(info_title)
+
+        self.lbl_protocol = QLabel(f"Protocol version - v{PROTOCOL_VERSION}")
+        self.lbl_latest = QLabel("Latest version - v0.0.0")
+        self.lbl_app = QLabel(f"NotNet App version - v{APP_VERSION}")
+
+        for w in (self.lbl_protocol, self.lbl_latest, self.lbl_app):
+            w.setObjectName("muted")
+            layout.addWidget(w)
+
+        layout.addStretch(1)
+
+        self._start_latest_fetch()
+
+    def _start_latest_fetch(self):
+        threading.Thread(target=self._fetch_latest, daemon=True).start()
+
+    def _fetch_latest(self):
+        latest = " * unknown (check connection)"
+        try:
+            req = urllib.request.Request(
+                GITHUB_LATEST_URL,
+                headers={
+                    "User-Agent": f"NotNet/{APP_VERSION}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=3) as r:
+                data = r.read().decode("utf-8", errors="replace")
+            obj = json.loads(data)
+            tag = str(obj.get("tag_name", "")).strip()
+            if tag:
+                latest = tag.lstrip("v").strip() or latest
+        except Exception:
+            pass
+
+        self.bridge.latest.emit(latest)
+
+    def _set_latest(self, v: str):
+        self.lbl_latest.setText(f"Latest version - v{v}")
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -885,13 +974,15 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
 
-        self.start_page = StartPage(self.show_server, self.show_client)
+        self.start_page = StartPage(self.show_server, self.show_client, self.show_settings)
         self.server_page = ServerPage(self.show_start)
         self.client_page = ClientPage(self.show_start)
+        self.settings_page = SettingsPage(self.show_start)
 
         self.stack.addWidget(self.start_page)
         self.stack.addWidget(self.server_page)
         self.stack.addWidget(self.client_page)
+        self.stack.addWidget(self.settings_page)
 
         self.show_start()
 
@@ -920,6 +1011,47 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.client_page)
         QTimer.singleShot(0, self._fit_to_current_page)
 
+    def show_settings(self):
+        self.stack.setCurrentWidget(self.settings_page)
+        QTimer.singleShot(0, self._fit_to_current_page)
+
+
+    def get_latest_version(self):
+        import json
+        import urllib.request
+
+        try:
+            with urllib.request.urlopen(
+                "https://api.github.com/repos/oguzokdotdev/notnet-messenger/releases/latest",
+                timeout=3
+            ) as r:
+                data = json.loads(r.read().decode())
+                return data["tag_name"].strip().lstrip("v")
+        except Exception:
+            return None
+
+    def parse_version(self, v: str):
+        try:
+            return tuple(int(x) for x in v.strip().lstrip("v").split("."))
+        except Exception:
+            return (0,)
+
+
+    def check_update(self):
+        latest = self.get_latest_version()
+        if latest and self.parse_version(latest) > self.parse_version(APP_VERSION):
+            box = QMessageBox(self)
+            box.setWindowTitle("Update available. Don't ignore!")
+            box.setText(f"New version {latest} is available\nCurrent version - {APP_VERSION}\nOpen GitHub?")
+
+            btn_yes = box.addButton("Open GitHub", QMessageBox.AcceptRole)
+            btn_no = box.addButton("Later", QMessageBox.RejectRole)
+
+            box.exec()
+            if box.clickedButton() == btn_yes:
+                import webbrowser
+                webbrowser.open("https://github.com/oguzokdotdev/notnet-messenger/releases/latest")
+
     def closeEvent(self, event):
         try:
             if self.client_page.client.running:
@@ -940,5 +1072,6 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     load_app_fonts()
     w = MainWindow()
+    QTimer.singleShot(0, w.check_update)
     w.show()
     sys.exit(app.exec())

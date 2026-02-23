@@ -29,7 +29,7 @@ NotNet — это мессенджер для общения в локально
 
 ### На Linux
 ```bash
-tar -xvzf notnet-v1.0.0-linux-amd64.tar.gz
+tar -xvzf notnet-v1.1.0-linux-amd64.tar.gz
 ```
 
 ### На Windows

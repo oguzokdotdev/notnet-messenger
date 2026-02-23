@@ -4,8 +4,14 @@ import time
 import json
 from typing import Callable, Dict, List, Optional, Tuple
 
-from .protocol import encode_line, split_lines
-
+from .protocol import (
+    PROTOCOL_VERSION,
+    encode_line,
+    split_lines,
+    parse_hello,
+    make_protocol_ok,
+    make_protocol_mismatch,
+)
 
 class NotNetServer:
     def __init__(self, host: str = "0.0.0.0", port: int = 55555):
@@ -104,14 +110,37 @@ class NotNetServer:
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((self.host, self.port))
-        s.listen()
-        s.settimeout(0.5)
+
+        try:
+            s.bind((self.host, self.port))
+            s.listen()
+            s.settimeout(0.5)
+        except OSError as e:
+            # важно: не оставляем сокет висеть и не делаем вид, что сервер запущен
+            try:
+                s.close()
+            except OSError:
+                pass
+
+            self.server_socket = None
+            self._running = False
+            self._started_at = None
+
+            if getattr(e, "errno", None) == 98:
+                self._emit_log(
+                    f"[!] Port {self.port} is already in use (server not started).",
+                    "error",
+                )
+            else:
+                self._emit_log(f"[!] Server failed to start: {e}", "error")
+
+            # чтобы UI сразу обновил список/состояние
+            self._emit_clients()
+            return
 
         self.server_socket = s
         self._running = True
         self._started_at = time.time()
-
         self._emit_log(f"NotNet Server running on {self.host}:{self.port}", "info")
 
         try:
@@ -128,10 +157,26 @@ class NotNetServer:
                 )
                 t.start()
         finally:
+            # если поток умер сам — подчистим состояние
             self._running = False
+            self._started_at = None
+            if self.server_socket is s:
+                self.server_socket = None
+            try:
+                s.close()
+            except OSError:
+                pass
+            self._emit_clients()
+
 
     def stop(self):
+        # если сервер не запущен — не пишем "stopped" как будто он реально работал
+        if not self._running and self.server_socket is None:
+            self._emit_log("Server is not running", "info")
+            return
+
         self._running = False
+        self._started_at = None
 
         s = self.server_socket
         self.server_socket = None
@@ -161,7 +206,7 @@ class NotNetServer:
 
         self._emit_clients()
         self._emit_log("Server stopped", "warn")
-
+        
     def kick(self, username: str) -> bool:
         target: Optional[socket.socket] = None
         with self._lock:
@@ -196,29 +241,52 @@ class NotNetServer:
         self._emit_clients()
         return True
 
-    def _recv_line_handshake(self, conn: socket.socket, limit: int = 256) -> Tuple[str, str]:
-        """
-        Читает до первой '\n' (handshake username).
-        Возвращает (first_line, rest_buffer)
-        """
-        buffer = ""
+    def _recv_line_handshake(self, conn: socket.socket, buffer: str = ""):
+        conn.settimeout(None)
+
         while "\n" not in buffer:
             chunk = conn.recv(1024)
             if not chunk:
-                return "", ""
+                raise ConnectionError("connection closed during handshake")
             buffer += chunk.decode("utf-8", errors="replace")
-            if len(buffer) > limit:
-                # слишком длинное имя/мусор
-                return "", ""
-        line, rest = buffer.split("\n", 1)
-        return line, rest
+
+        line, buffer = buffer.split("\n", 1)
+        return line, buffer
 
     def _handle_client(self, conn: socket.socket, addr):
         username: Optional[str] = None
         buffer = ""
 
         try:
-            username_line, buffer = self._recv_line_handshake(conn)
+            hello_line, buffer = self._recv_line_handshake(conn)
+            try:
+                client_ver = parse_hello((hello_line or "").strip())
+            except Exception:
+                try:
+                    self._send_line(conn, "@ERR bad_hello")
+                except OSError:
+                    pass
+                self._drop_client(conn)
+                return
+
+            if client_ver != PROTOCOL_VERSION:
+                try:
+                    self._send_line(conn, make_protocol_mismatch(PROTOCOL_VERSION, client_ver))
+                except OSError:
+                    pass
+                self._drop_client(conn)
+                self._emit_log(
+                    f"[!] Protocol mismatch from {addr} (client={client_ver}, server={PROTOCOL_VERSION})",
+                    "warn",
+                )
+                return
+
+            try:
+                self._send_line(conn, make_protocol_ok(PROTOCOL_VERSION))
+            except OSError:
+                pass
+
+            username_line, buffer = self._recv_line_handshake(conn, buffer=buffer)
             username = (username_line or "").strip()
 
             if not username:
@@ -253,7 +321,6 @@ class NotNetServer:
             self._emit_clients()
             self._broadcast(f"* {username} joined", exclude=None)
 
-            # основной цикл
             while self._running:
                 lines, buffer = split_lines(buffer)
                 for raw_line in lines:
@@ -271,7 +338,6 @@ class NotNetServer:
         except Exception as e:
             self._emit_log(f"[!] client error {addr}: {e}", "error")
         finally:
-            # убрать из клиентов, закрыть
             with self._lock:
                 self.clients.pop(conn, None)
 

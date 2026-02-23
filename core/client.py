@@ -3,7 +3,12 @@ import threading
 import json
 from typing import Callable, Optional
 
-from .protocol import encode_line, split_lines
+from .protocol import (
+    encode_line,
+    split_lines,
+    PROTOCOL_VERSION,
+    make_hello,
+)
 
 
 class NotNetClient:
@@ -41,11 +46,29 @@ class NotNetClient:
         self.sock = s
         self.username = username
 
-        # handshake: username
+        self.sock.sendall(encode_line(make_hello(PROTOCOL_VERSION)))
+
+        handshake_buffer = ""
+        while "\n" not in handshake_buffer:
+            data = self.sock.recv(1024)
+            if not data:
+                raise ConnectionError("Server closed connection during handshake")
+            handshake_buffer += data.decode("utf-8", errors="replace")
+
+        line, rest = handshake_buffer.split("\n", 1)
+        line = line.strip()
+        handshake_buffer = rest
+
+        if line.startswith("ERR PROTOCOL_MISMATCH"):
+            self._force_close()
+            raise ConnectionError(line)
+
+        if line != f"OK PROTOCOL {PROTOCOL_VERSION}":
+            self._force_close()
+            raise ConnectionError("Invalid server protocol handshake response")
+
         self.sock.sendall(encode_line(self.username))
 
-        # handshake: read line
-        handshake_buffer = ""
         while "\n" not in handshake_buffer:
             data = self.sock.recv(1024)
             if not data:
@@ -66,6 +89,8 @@ class NotNetClient:
                 raise ValueError("Username already in use")
             if code == "username_empty":
                 raise ValueError("Username is empty")
+            if code == "bad_hello":
+                raise ConnectionError("Bad protocol hello")
             raise ConnectionError(f"Server rejected connection: {code}")
 
         if line != "@OK":
