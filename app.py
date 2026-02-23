@@ -19,7 +19,7 @@ from core.server import NotNetServer
 from core.client import NotNetClient
 from core.protocol import PROTOCOL_VERSION
 
-APP_VERSION = "1.0.0-beta"
+APP_VERSION = "1.1.0"
 GITHUB_LATEST_URL = "https://api.github.com/repos/oguzokdotdev/notnet-messenger/releases/latest"
 
 def _resource_path(rel_path: str) -> str:
