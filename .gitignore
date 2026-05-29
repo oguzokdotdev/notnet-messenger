@@ -11,7 +11,10 @@ env/
 build/
 dist/
 *.spec
-!NotNet.spec
+
+# bin
+*.7z
+*.tar.gz
 
 # IDE
 .vscode/
